@@ -1,0 +1,16 @@
+<?xml version="1.0"?>
+<iq:manifest version="3" xmlns:iq="http://www.garmin.com/xml/connectiq">
+  <iq:application entry="CalmPulseBPApp" id="com.sulhanhadi.calmpulsebp" launcherIcon="@Drawables.LauncherIcon" minApiLevel="3.2.0" name="@Strings.AppName" type="watch-app">
+    <iq:products>
+      <iq:product id="fr55" />
+    </iq:products>
+    <iq:permissions>
+      <iq:uses-permission id="Positioning"/>
+      <iq:uses-permission id="PersistedStorage"/>
+      <iq:uses-permission id="Toybox.Attention"/>
+    </iq:permissions>
+    <iq:languages>
+      <iq:language>eng</iq:language>
+    </iq:languages>
+  </iq:application>
+</iq:manifest>
