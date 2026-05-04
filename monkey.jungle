@@ -1,0 +1,11 @@
+project.manifest = manifest.xml
+project.main = source/CalmPulseBPApp.mc
+project.resources = resources
+
+base.outputPath = bin
+base.sourcePath = source
+base.resourcePath = resources
+
+fr55.sourcePath = $(base.sourcePath)
+fr55.resourcePath = $(base.resourcePath)
+fr55.outputPath = $(base.outputPath)

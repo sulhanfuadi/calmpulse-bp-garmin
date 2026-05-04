@@ -5,7 +5,7 @@
       <iq:product id="fr55" />
     </iq:products>
     <iq:permissions>
-      <iq:uses-permission id="Positioning"/>
+      <iq:uses-permission id="SensorHistory"/>
       <iq:uses-permission id="PersistedStorage"/>
       <iq:uses-permission id="Toybox.Attention"/>
     </iq:permissions>

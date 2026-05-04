@@ -10,5 +10,9 @@
 - Mendesain interaksi singkat dan low-friction agar dukungan kesehatan lebih mudah diakses pengguna dengan jadwal padat.
 - Mengedepankan model privacy-first (data lokal di perangkat) untuk menurunkan hambatan adopsi terkait privasi.
 
+## Scope note (v1)
+- Target device release ini: **Forerunner 55 (`fr55`)**.
+- Reflection v1 adalah mood-only; input BP numerik manual direncanakan untuk v1.1.
+
 ## Safety and ethics note
 CalmPulse BP bukan alat diagnosis atau darurat. Aplikasi hanya berperan sebagai pendamping kebiasaan sehat dan mendorong konsultasi ke tenaga medis saat gejala persisten.

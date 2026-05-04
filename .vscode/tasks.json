@@ -1,0 +1,39 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "CIQ: Build FR55",
+      "type": "shell",
+      "command": "${env:CIQ_SDK_HOME}/bin/monkeyc",
+      "args": [
+        "-f", "${workspaceFolder}/manifest.xml",
+        "-o", "${workspaceFolder}/bin/CalmPulseBP-fr55.prg",
+        "-y", "${env:CIQ_DEV_KEY}",
+        "-d", "fr55",
+        "-w"
+      ],
+      "group": "build",
+      "problemMatcher": []
+    },
+    {
+      "label": "CIQ: Run Simulator FR55",
+      "type": "shell",
+      "dependsOn": "CIQ: Build FR55",
+      "command": "${env:CIQ_SDK_HOME}/bin/connectiq",
+      "args": [
+        "-d", "fr55",
+        "${workspaceFolder}/bin/CalmPulseBP-fr55.prg"
+      ],
+      "problemMatcher": []
+    },
+    {
+      "label": "CIQ: Deploy Template",
+      "type": "shell",
+      "command": "echo",
+      "args": [
+        "Use Garmin Express / Device Transfer flow for physical Forerunner 55 deploy with bin/CalmPulseBP-fr55.prg"
+      ],
+      "problemMatcher": []
+    }
+  ]
+}
