@@ -1,0 +1,51 @@
+name: Build Garmin PRG
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ "main" ]
+
+jobs:
+  build-prg:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Download Connect IQ SDK 8.4.1
+        run: |
+          set -e
+          wget -O ciq-sdk.zip "https://developer.garmin.com/downloads/connect-iq/sdks/connectiq-sdk-lin-8.4.1-2026-02-03-e9f77eeaa.zip"
+          unzip -q ciq-sdk.zip -d "$HOME"
+          echo "CIQ_SDK_HOME=$HOME/connectiq-sdk-lin-8.4.1-2026-02-03-e9f77eeaa" >> $GITHUB_ENV
+
+      - name: Restore developer key
+      
+        run: |
+          set -e
+          mkdir -p "$HOME/.garmin"
+          echo "${{ secrets.CIQ_DEV_KEY_DER_B64 }}" | base64 -d > "$HOME/.garmin/developer_key.der"
+
+      - name: Build PRG
+        run: |
+          set -e
+          mkdir -p bin
+          "$CIQ_SDK_HOME/bin/monkeyc" \
+            -f manifest.xml \
+            -o bin/CalmPulseBP.prg \
+            -y "$HOME/.garmin/developer_key.der" \
+            -d vivoactive5 \
+            -w
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: CalmPulseBP-prg
+          path: bin/CalmPulseBP.prg
