@@ -21,31 +21,38 @@ jobs:
 
       - name: Download Connect IQ SDK 8.4.1
         run: |
-          set -e
+          set -euo pipefail
           wget -O ciq-sdk.zip "https://developer.garmin.com/downloads/connect-iq/sdks/connectiq-sdk-lin-8.4.1-2026-02-03-e9f77eeaa.zip"
           unzip -q ciq-sdk.zip -d "$HOME"
-          echo "CIQ_SDK_HOME=$HOME/connectiq-sdk-lin-8.4.1-2026-02-03-e9f77eeaa" >> $GITHUB_ENV
+          echo "CIQ_SDK_HOME=$HOME/connectiq-sdk-lin-8.4.1-2026-02-03-e9f77eeaa" >> "$GITHUB_ENV"
 
       - name: Restore developer key
-      
         run: |
-          set -e
+          set -euo pipefail
           mkdir -p "$HOME/.garmin"
           echo "${{ secrets.CIQ_DEV_KEY_DER_B64 }}" | base64 -d > "$HOME/.garmin/developer_key.der"
 
-      - name: Build PRG
+      - name: Build PRG (fr55)
         run: |
-          set -e
+          set -euo pipefail
           mkdir -p bin
           "$CIQ_SDK_HOME/bin/monkeyc" \
             -f manifest.xml \
-            -o bin/CalmPulseBP.prg \
+            -o bin/CalmPulseBP-fr55.prg \
             -y "$HOME/.garmin/developer_key.der" \
-            -d vivoactive5 \
-            -w
+            -d fr55 \
+            -w 2>&1 | tee build.log
+
+      - name: Fail on critical warnings
+        run: |
+          set -euo pipefail
+          if grep -E "(ERROR:|Undefined symbol|Internal compiler error)" build.log; then
+            echo "Critical compiler diagnostics detected"
+            exit 1
+          fi
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: CalmPulseBP-prg
-          path: bin/CalmPulseBP.prg
+          name: CalmPulseBP-fr55-prg-${{ github.run_number }}
+          path: bin/CalmPulseBP-fr55.prg

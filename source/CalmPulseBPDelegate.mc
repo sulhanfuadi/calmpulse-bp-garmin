@@ -18,9 +18,15 @@ class CalmPulseBPDelegate extends WatchUi.InputDelegate {
       return true;
     }
 
-    if (appState == "Triggered" && key == WatchUi.KEY_START) {
-      _app.startBreathingSession();
-      return true;
+    if (appState == "Triggered") {
+      if (key == WatchUi.KEY_START) {
+        _app.startBreathingSession();
+        return true;
+      }
+      if (key == WatchUi.KEY_BACK) {
+        _app.goIdle();
+        return true;
+      }
     }
 
     if (appState == "BreathingActive" && key == WatchUi.KEY_BACK) {

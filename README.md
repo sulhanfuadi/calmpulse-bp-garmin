@@ -1,39 +1,65 @@
-# CalmPulse BP (Garmin Connect IQ MVP)
+# CalmPulse BP (Garmin Connect IQ)
 
-CalmPulse BP adalah aplikasi Garmin watch-only untuk membantu pengguna hipertensi muda melakukan intervensi mikro (pause + breathing) saat sinyal stres meningkat.
+CalmPulse BP adalah aplikasi watch-only untuk membantu pengguna melakukan jeda napas terarah saat sinyal stres meningkat.
 
-## Target release
-- Device target: **Forerunner 55 (`fr55`)**
-- Scope v1: mood-only reflection (`lebih_tenang`, `masih_tegang`, `lewati`)
-- Positioning: self-awareness support, **bukan alat diagnosis/darurat**
-
-## MVP flow
-- First run: disclaimer + baseline heart-rate setup
-- Idle monitoring: trigger rule (HR di atas baseline + inactivity + cooldown)
-- Intervention: haptic nudge + 60 detik guided breathing
-- Reflection: mood logging (tanpa input BP numerik di v1)
-- Summary: trigger count, completion count, calming rate
+## Production contract (MVP)
+- Device utama: `fr55`
+- State kontrak: `Onboarding -> Idle -> Triggered -> BreathingActive -> ReflectionPending -> Summary`
+- Input kontrak:
+  - `START`: setuju/start/konfirmasi
+  - `UP/DOWN`: pilihan refleksi
+  - `BACK`: batal/kembali
+- Data sesi:
+  - `timestamp`, `trigger_reason`, `session_completed`, `mood_after`, `optional_bp`
+- Scope medis: self-awareness support, **bukan diagnosis** dan **bukan layanan darurat**
 
 ## Build prerequisites
 1. Install Connect IQ SDK.
-2. Set environment variable `CIQ_SDK_HOME` ke path SDK (contoh: `/Users/<user>/Library/Application Support/Garmin/ConnectIQ/Sdks/connectiq-sdk-mac-*/`).
-3. Generate/set developer key path di `CIQ_DEV_KEY`.
-4. Open folder ini di VS Code.
+2. Set `CIQ_SDK_HOME` ke path SDK.
+3. Set `CIQ_DEV_KEY` ke developer key `.der`.
 
-## Build & run (VS Code tasks)
-- Jalankan task `CIQ: Build FR55` untuk compile `.prg`.
-- Jalankan task `CIQ: Run Simulator FR55` untuk simulasi.
-- Artifact output: `bin/CalmPulseBP-fr55.prg`.
-
-## Manual CLI (opsional)
+## Preflight check (wajib sebelum build lokal)
 ```bash
-$CIQ_SDK_HOME/bin/monkeyc -f manifest.xml -o bin/CalmPulseBP-fr55.prg -y $CIQ_DEV_KEY -d fr55 -w
+./scripts/verify-env.sh fr55
+```
+
+Script ini akan memvalidasi:
+- `CIQ_SDK_HOME` dan `CIQ_DEV_KEY`
+- binary `monkeyc` dan `connectiq`
+- file key `.der`
+- deklarasi device `fr55` di `manifest.xml`
+
+## Build local
+```bash
+$CIQ_SDK_HOME/bin/monkeyc \
+  -f manifest.xml \
+  -o bin/CalmPulseBP-fr55.prg \
+  -y "$CIQ_DEV_KEY" \
+  -d fr55 \
+  -w
+```
+
+## Run simulator (opsional jika tersedia)
+```bash
 $CIQ_SDK_HOME/bin/connectiq -d fr55 bin/CalmPulseBP-fr55.prg
 ```
 
-## Safety statement
-Aplikasi ini **bukan alat diagnosis** dan **bukan layanan darurat**. Gunakan sebagai pendamping self-awareness dan konsultasikan gejala persisten ke tenaga medis profesional.
+## Runtime hardening yang aktif
+- Trigger gate aman: HR invalid/null di-skip tanpa crash.
+- Storage fallback aman: read/write gagal tidak menghentikan app.
+- Timer lifecycle aman: no double-start, no orphan timer saat state berubah.
+- Daily metrics auto-reset berdasarkan tanggal lokal.
+- UI memakai snapshot tunggal dari app state (read-only pada view).
 
-## v1 limitation / v1.1 next
-- v1 belum mengaktifkan input BP numerik manual.
-- v1.1 akan menambahkan flow input sistolik/diastolik yang ringkas dan aman digunakan via tombol watch.
+## Known limitations
+- Belum ada input BP numerik manual (tetap `optional_bp = null`).
+- Validasi end-to-end simulator tergantung stabilitas simulator lokal.
+
+## Manual QA checklist (tanpa simulator)
+Lihat: `docs/QA_CHECKLIST.md`
+
+## Troubleshooting build
+- Jalankan `./scripts/verify-env.sh fr55` untuk diagnosa cepat.
+- Error key signing: pastikan `CIQ_DEV_KEY` valid dan format `.der`.
+- SDK tidak ditemukan: cek `echo $CIQ_SDK_HOME`.
+- Product mismatch: gunakan target `-d fr55` sesuai manifest.

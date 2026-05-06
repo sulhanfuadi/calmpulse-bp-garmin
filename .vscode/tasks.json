@@ -2,8 +2,16 @@
   "version": "2.0.0",
   "tasks": [
     {
+      "label": "CIQ: Verify Environment",
+      "type": "shell",
+      "command": "${workspaceFolder}/scripts/verify-env.sh",
+      "args": ["fr55"],
+      "problemMatcher": []
+    },
+    {
       "label": "CIQ: Build FR55",
       "type": "shell",
+      "dependsOn": "CIQ: Verify Environment",
       "command": "${env:CIQ_SDK_HOME}/bin/monkeyc",
       "args": [
         "-f", "${workspaceFolder}/manifest.xml",

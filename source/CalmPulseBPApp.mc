@@ -1,209 +1,223 @@
-using Toybox.Activity;
 using Toybox.Application;
 using Toybox.Attention;
-using Toybox.Graphics;
 using Toybox.HeartRate;
 using Toybox.Lang;
-using Toybox.PersistedContent;
 using Toybox.System;
 using Toybox.Time;
 using Toybox.Timer;
 using Toybox.WatchUi;
 
 class CalmPulseBPApp extends Application.AppBase {
+  var _stateMachine;
+  var _triggerEngine;
+  var _sessionStore;
+  var _breathingController;
 
-  const KEY_BASELINE_HR = "baseline_hr";
-  const KEY_LAST_TRIGGER_AT = "last_trigger_at";
-  const KEY_COOLDOWN_MIN = "cooldown_minutes";
-  const KEY_SESSION_LOG = "session_log";
-  const KEY_DAILY_METRICS = "daily_metrics";
-  const KEY_DISCLAIMER_ACK = "disclaimer_ack";
-  const KEY_LAST_SESSION_COMPLETED = "last_session_completed";
-
-  const STATE_ONBOARDING = "Onboarding";
-  const STATE_IDLE = "Idle";
-  const STATE_TRIGGERED = "Triggered";
-  const STATE_BREATHING = "BreathingActive";
-  const STATE_REFLECTION = "ReflectionPending";
-  const STATE_SUMMARY = "Summary";
-
-  const HR_THRESHOLD_DELTA = 14;
-  const INACTIVITY_SECONDS = 600;
-  const BREATH_DURATION_SECONDS = 60;
-
-  var _state;
-  var _baselineHr;
-  var _lastTriggerAt;
-  var _cooldownMinutes;
-  var _sessionLog;
-  var _dailyMetrics;
-
+  var _runtime;
   var _monitorTimer;
-  var _breathingTimer;
-  var _breathingElapsed;
 
   function initialize() {
     AppBase.initialize();
-    _state = STATE_ONBOARDING;
-    _baselineHr = 0;
-    _lastTriggerAt = 0;
-    _cooldownMinutes = 45;
-    _sessionLog = [];
-    _dailyMetrics = {
-      "trigger_count" => 0,
-      "completion_count" => 0,
-      "calming_rate" => 0.0
+    _stateMachine = new StateMachine();
+    _triggerEngine = new TriggerEngine();
+    _sessionStore = new SessionStore();
+    _breathingController = new BreathingController();
+
+    _runtime = {
+      "baseline_hr" => AppConfig.DEFAULT_BASELINE_HR,
+      "last_trigger_at" => 0,
+      "cooldown_minutes" => AppConfig.DEFAULT_COOLDOWN_MINUTES,
+      "session_log" => [],
+      "daily_metrics" => _sessionStore.defaultMetrics(),
+      "disclaimer_ack" => false,
+      "last_session_completed" => false,
+      "metrics_day" => _sessionStore.currentDayKey()
     };
-    _breathingElapsed = 0;
   }
 
   function onStart(state as Dictionary?) as Void {
-    loadPersistedState();
+    _runtime = _sessionStore.loadState();
+    _sessionStore.rollDailyMetricsIfNeeded(_runtime);
 
-    if (!hasDisclaimerAck()) {
-      _state = STATE_ONBOARDING;
-    } else if (_baselineHr <= 0) {
-      _state = STATE_ONBOARDING;
-    } else {
-      _state = STATE_IDLE;
-      startMonitoring();
+    if (!isDisclaimerAck()) {
+      _stateMachine.transition(StateMachine.STATE_ONBOARDING);
+      stopMonitoring();
+      _breathingController.stop();
+      WatchUi.requestUpdate();
+      return;
     }
+
+    ensureIdleRecovery();
+    startMonitoring();
+    WatchUi.requestUpdate();
   }
 
   function onStop(state as Dictionary?) as Void {
-    if (_monitorTimer != null) { _monitorTimer.stop(); }
-    if (_breathingTimer != null) { _breathingTimer.stop(); }
-    persistState();
+    stopMonitoring();
+    _breathingController.stop();
+    _sessionStore.persistState(_runtime);
   }
 
   function getInitialView() as [Views] or [Views, InputDelegates] {
     return [ new CalmPulseBPView(self), new CalmPulseBPDelegate(self) ];
   }
 
-  function getState() as String { return _state; }
-  function getBaselineHr() as Number { return _baselineHr; }
-  function getDailyMetrics() as Dictionary { return _dailyMetrics; }
-  function getBreathingElapsed() as Number { return _breathingElapsed; }
-  function getLastSessionCompleted() as Boolean { return Application.Storage.getValue(KEY_LAST_SESSION_COMPLETED, false); }
+  function getState() as String {
+    return _stateMachine.getState();
+  }
+
+  function getUiSnapshot() as Dictionary {
+    return {
+      "state" => _stateMachine.getState(),
+      "baseline_hr" => _runtime["baseline_hr"],
+      "daily_metrics" => _runtime["daily_metrics"],
+      "breathing_elapsed" => _breathingController.elapsed(),
+      "breathing_remaining" => max(0, AppConfig.BREATH_DURATION_SECONDS - _breathingController.elapsed()),
+      "last_session_completed" => _runtime["last_session_completed"]
+    };
+  }
 
   function acknowledgeDisclaimerAndSetBaseline() as Void {
+    if (_stateMachine.getState() != StateMachine.STATE_ONBOARDING) { return; }
+
     var sample = HeartRate.getCurrentHeartRate();
-    var value = (sample != null && sample > 0) ? sample : 72;
-    _baselineHr = value;
-    Application.Storage.setValue(KEY_DISCLAIMER_ACK, true);
-    _state = STATE_IDLE;
-    persistState();
+    var value = (sample != null && sample > 0) ? sample : AppConfig.DEFAULT_BASELINE_HR;
+
+    _runtime["baseline_hr"] = value;
+    _runtime["disclaimer_ack"] = true;
+    _stateMachine.transition(StateMachine.STATE_IDLE);
+
+    _sessionStore.persistState(_runtime);
     startMonitoring();
     WatchUi.requestUpdate();
   }
 
   function openSummary() as Void {
-    _state = STATE_SUMMARY;
-    WatchUi.requestUpdate();
-  }
-
-  function startMonitoring() as Void {
-    if (_monitorTimer == null) { _monitorTimer = new Timer.Timer(); }
-    _monitorTimer.start(method(:evaluateTrigger), 15, true);
+    if (_stateMachine.getState() != StateMachine.STATE_IDLE) { return; }
+    if (_stateMachine.transition(StateMachine.STATE_SUMMARY)) {
+      WatchUi.requestUpdate();
+    }
   }
 
   function evaluateTrigger() as Void {
-    if (_state != STATE_IDLE || !canTriggerByCooldown()) { return; }
+    if (_stateMachine.getState() != StateMachine.STATE_IDLE) {
+      return;
+    }
 
-    var hr = HeartRate.getCurrentHeartRate();
-    if (hr == null || hr <= 0 || !isUserLikelyInactive()) { return; }
+    var gate = {
+      "baseline_hr" => _runtime["baseline_hr"],
+      "last_trigger_at" => _runtime["last_trigger_at"],
+      "cooldown_minutes" => _runtime["cooldown_minutes"],
+      "now_seconds" => Time.now().value()
+    };
 
-    if (hr >= (_baselineHr + HR_THRESHOLD_DELTA)) {
+    if (_triggerEngine.shouldTrigger(gate)) {
       markTriggered("hr_above_baseline_and_inactive");
     }
   }
 
-  function canTriggerByCooldown() as Boolean {
-    if (_lastTriggerAt <= 0) { return true; }
-    var nowSeconds = Time.now().value();
-    var elapsed = nowSeconds - _lastTriggerAt;
-    return elapsed >= (_cooldownMinutes * 60);
-  }
-
-  function isUserLikelyInactive() as Boolean {
-    var activity = Activity.getActivityInfo();
-    if (activity == null || activity.elapsedTime == null) { return true; }
-    return activity.elapsedTime >= INACTIVITY_SECONDS;
-  }
-
   function markTriggered(reason as String) as Void {
-    _state = STATE_TRIGGERED;
-    _lastTriggerAt = Time.now().value();
-    _dailyMetrics["trigger_count"] = (_dailyMetrics["trigger_count"] as Number) + 1;
-    var vibe = new Attention.VibeProfile(50, 500);
-    Attention.vibrate([vibe, vibe]);
+    if (!_stateMachine.transition(StateMachine.STATE_TRIGGERED)) {
+      return;
+    }
+
+    _runtime["last_trigger_at"] = Time.now().value();
+
+    var metrics = _runtime["daily_metrics"] as Dictionary;
+    metrics["trigger_count"] = (metrics["trigger_count"] as Number) + 1;
+
+    Attention.vibrate([
+      new Attention.VibeProfile(AppConfig.VIBE_TRIGGER_INTENSITY, AppConfig.VIBE_TRIGGER_DURATION_MS),
+      new Attention.VibeProfile(AppConfig.VIBE_TRIGGER_INTENSITY, AppConfig.VIBE_TRIGGER_DURATION_MS)
+    ]);
+
     appendSession(reason);
-    persistState();
+    recalculateCalmingRate();
+    _sessionStore.persistState(_runtime);
     WatchUi.requestUpdate();
   }
 
   function startBreathingSession() as Void {
-    _state = STATE_BREATHING;
-    _breathingElapsed = 0;
-    if (_breathingTimer == null) { _breathingTimer = new Timer.Timer(); }
-    _breathingTimer.start(method(:tickBreathing), 1, true);
+    if (_stateMachine.getState() != StateMachine.STATE_TRIGGERED) { return; }
+    if (!_stateMachine.transition(StateMachine.STATE_BREATHING)) { return; }
+
+    _breathingController.start(method(:tickBreathing));
     WatchUi.requestUpdate();
   }
 
   function tickBreathing() as Void {
-    _breathingElapsed += 1;
-    if ((_breathingElapsed % 4) == 0) {
-      Attention.vibrate([new Attention.VibeProfile(30, 140)]);
+    if (_stateMachine.getState() != StateMachine.STATE_BREATHING || !_breathingController.isActive()) {
+      _breathingController.stop();
+      return;
     }
 
-    if (_breathingElapsed >= BREATH_DURATION_SECONDS) {
-      if (_breathingTimer != null) { _breathingTimer.stop(); }
-      _state = STATE_REFLECTION;
-      Application.Storage.setValue(KEY_LAST_SESSION_COMPLETED, true);
-      _dailyMetrics["completion_count"] = (_dailyMetrics["completion_count"] as Number) + 1;
+    _breathingController.tick();
+
+    if (_breathingController.isDone()) {
+      _breathingController.stop();
+      _breathingController.completeHaptic();
+      _runtime["last_session_completed"] = true;
+      var metrics = _runtime["daily_metrics"] as Dictionary;
+      metrics["completion_count"] = (metrics["completion_count"] as Number) + 1;
       recalculateCalmingRate();
-      persistState();
+      _stateMachine.transition(StateMachine.STATE_REFLECTION);
+      _sessionStore.persistState(_runtime);
     }
 
     WatchUi.requestUpdate();
   }
 
   function skipBreathingSession() as Void {
-    if (_breathingTimer != null) { _breathingTimer.stop(); }
-    _state = STATE_REFLECTION;
-    Application.Storage.setValue(KEY_LAST_SESSION_COMPLETED, false);
-    persistState();
+    if (_stateMachine.getState() != StateMachine.STATE_BREATHING) { return; }
+
+    _breathingController.stop();
+    _runtime["last_session_completed"] = false;
+    _stateMachine.transition(StateMachine.STATE_REFLECTION);
+    recalculateCalmingRate();
+    _sessionStore.persistState(_runtime);
     WatchUi.requestUpdate();
   }
 
   function saveReflection(mood as String, systolic as Number?, diastolic as Number?) as Void {
-    if (_sessionLog.size() == 0) {
-      _state = STATE_IDLE;
+    if (_stateMachine.getState() != StateMachine.STATE_REFLECTION) {
+      ensureIdleRecovery();
+      WatchUi.requestUpdate();
       return;
     }
 
-    var idx = _sessionLog.size() - 1;
-    var entry = _sessionLog[idx];
-    entry["session_completed"] = getLastSessionCompleted();
-    entry["mood_after"] = mood;
-    if (systolic != null && diastolic != null) {
-      entry["optional_bp"] = { "systolic" => systolic, "diastolic" => diastolic };
+    var logs = _runtime["session_log"] as Array;
+    if (logs.size() == 0) {
+      ensureIdleRecovery();
+      WatchUi.requestUpdate();
+      return;
     }
 
-    _sessionLog[idx] = entry;
-    _state = STATE_SUMMARY;
-    persistState();
+    var idx = logs.size() - 1;
+    var entry = logs[idx] as Dictionary;
+    entry["session_completed"] = _runtime["last_session_completed"];
+    entry["mood_after"] = mood;
+    entry["optional_bp"] = null;
+
+    logs[idx] = entry;
+
+    _stateMachine.transition(StateMachine.STATE_SUMMARY);
+    _sessionStore.persistState(_runtime);
     WatchUi.requestUpdate();
   }
 
   function goIdle() as Void {
-    _state = STATE_IDLE;
-    persistState();
+    _breathingController.stop();
+    _stateMachine.transition(StateMachine.STATE_IDLE);
+    _sessionStore.rollDailyMetricsIfNeeded(_runtime);
+    recalculateCalmingRate();
+    _sessionStore.persistState(_runtime);
+    startMonitoring();
     WatchUi.requestUpdate();
   }
 
   function appendSession(reason as String) as Void {
-    _sessionLog.add({
+    var logs = _runtime["session_log"] as Array;
+    logs.add({
       "timestamp" => Time.now().value(),
       "trigger_reason" => reason,
       "session_completed" => false,
@@ -213,30 +227,37 @@ class CalmPulseBPApp extends Application.AppBase {
   }
 
   function recalculateCalmingRate() as Void {
-    var triggers = _dailyMetrics["trigger_count"] as Number;
-    var completions = _dailyMetrics["completion_count"] as Number;
-    _dailyMetrics["calming_rate"] = (triggers <= 0) ? 0.0 : (completions.toFloat() / triggers.toFloat()) * 100.0;
+    var metrics = _runtime["daily_metrics"] as Dictionary;
+    var triggers = metrics["trigger_count"] as Number;
+    var completions = metrics["completion_count"] as Number;
+    metrics["calming_rate"] = (triggers <= 0) ? 0.0 : (completions.toFloat() / triggers.toFloat()) * 100.0;
   }
 
-  function hasDisclaimerAck() as Boolean { return Application.Storage.getValue(KEY_DISCLAIMER_ACK, false); }
+  function ensureIdleRecovery() as Void {
+    if (_runtime["baseline_hr"] == null || (_runtime["baseline_hr"] as Number) <= 0) {
+      _runtime["baseline_hr"] = AppConfig.DEFAULT_BASELINE_HR;
+    }
 
-  function loadPersistedState() as Void {
-    _baselineHr = Application.Storage.getValue(KEY_BASELINE_HR, 0);
-    _lastTriggerAt = Application.Storage.getValue(KEY_LAST_TRIGGER_AT, 0);
-    _cooldownMinutes = Application.Storage.getValue(KEY_COOLDOWN_MIN, 45);
-    _sessionLog = Application.Storage.getValue(KEY_SESSION_LOG, []);
-    _dailyMetrics = Application.Storage.getValue(KEY_DAILY_METRICS, {
-      "trigger_count" => 0,
-      "completion_count" => 0,
-      "calming_rate" => 0.0
-    });
+    _stateMachine.setStateForRecovery();
+    _sessionStore.rollDailyMetricsIfNeeded(_runtime);
   }
 
-  function persistState() as Void {
-    Application.Storage.setValue(KEY_BASELINE_HR, _baselineHr);
-    Application.Storage.setValue(KEY_LAST_TRIGGER_AT, _lastTriggerAt);
-    Application.Storage.setValue(KEY_COOLDOWN_MIN, _cooldownMinutes);
-    Application.Storage.setValue(KEY_SESSION_LOG, _sessionLog);
-    Application.Storage.setValue(KEY_DAILY_METRICS, _dailyMetrics);
+  function startMonitoring() as Void {
+    if (_monitorTimer == null) {
+      _monitorTimer = new Timer.Timer();
+    }
+
+    _monitorTimer.stop();
+    _monitorTimer.start(method(:evaluateTrigger), AppConfig.MONITOR_TICK_SECONDS, true);
+  }
+
+  function stopMonitoring() as Void {
+    if (_monitorTimer != null) {
+      _monitorTimer.stop();
+    }
+  }
+
+  function isDisclaimerAck() as Boolean {
+    return _runtime["disclaimer_ack"];
   }
 }
