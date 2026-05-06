@@ -71,6 +71,4 @@ Local build is currently blocked by SDK environment issues on the current develo
 ## Continuation Plan
 Garmin readiness continues in parallel while SDK recovery is in progress. To keep delivery momentum, active implementation and validation continue on the Apple Watch track, then relevant learnings are folded back into Garmin execution.
 
-## References
-- Garmin repository: <https://github.com/sulhanfuadi/calmpulse-bp-garmin>
-- Apple Watch repository: <https://github.com/sulhanfuadi/calmpulse-bp-apple>
+Apple Watch continuation repo: <https://github.com/sulhanfuadi/calmpulse-bp-apple>
