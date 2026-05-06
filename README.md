@@ -63,3 +63,12 @@ Lihat: `docs/QA_CHECKLIST.md`
 - Error key signing: pastikan `CIQ_DEV_KEY` valid dan format `.der`.
 - SDK tidak ditemukan: cek `echo $CIQ_SDK_HOME`.
 - Product mismatch: gunakan target `-d fr55` sesuai manifest.
+
+## Status update (May 2026)
+- Build lokal sementara belum dijalankan karena kendala SDK environment di mesin pengembang.
+- Kondisi ini tidak mengubah progres arsitektur/logic aplikasi yang sudah disempurnakan.
+- Untuk menjaga momentum delivery, pengembangan aktif sementara dilanjutkan di jalur Apple Watch.
+
+## Repository links
+- Garmin: https://github.com/sulhanfuadi/calmpulse-bp-garmin
+- Apple Watch: https://github.com/sulhanfuadi/calmpulse-bp-apple
