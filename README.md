@@ -66,10 +66,13 @@ See: `docs/QA_CHECKLIST.md`
 - Product mismatch: use `-d fr55` to match `manifest.xml`.
 
 ## Status Update (May 2026)
-- Local build is currently blocked by SDK environment issues on the developer machine.
-- This does not change the app architecture and logic improvements already completed.
-- To maintain delivery momentum, active development is currently continuing on the Apple Watch track.
+- Local build remains blocked by SDK environment issues on the current developer machine.
+- The blocker is infrastructure-only and does not change the architecture and runtime hardening already completed in this repository.
 
-## Repository Links
-- Garmin: https://github.com/sulhanfuadi/calmpulse-bp-garmin
-- Apple Watch: https://github.com/sulhanfuadi/calmpulse-bp-apple
+## Next Steps
+- Continue Garmin codebase readiness in parallel while SDK recovery is in progress.
+- Maintain delivery momentum through ongoing implementation and validation on the Apple Watch track, then fold learnings back into Garmin execution as needed.
+
+## References
+- Garmin repository: https://github.com/sulhanfuadi/calmpulse-bp-garmin
+- Apple Watch repository: https://github.com/sulhanfuadi/calmpulse-bp-apple
